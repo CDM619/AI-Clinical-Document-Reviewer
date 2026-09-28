@@ -1,7 +1,11 @@
+
 import { useEffect, useState } from "react";
 import "./App.css";
 
-const API_URL = "http://127.0.0.1:8000";
+// Use the deployed API URL when configured.
+// Fall back to the local backend during development.
+const API_URL =
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 function App() {
   const [activeTab, setActiveTab] = useState("analyze");
@@ -40,7 +44,7 @@ function App() {
     } catch (err) {
       setError(
         err.message ||
-          "Unable to load report history. Check that FastAPI is running."
+          "Unable to load report history. Check that the backend is running."
       );
     } finally {
       setHistoryLoading(false);
@@ -382,7 +386,7 @@ function App() {
 
         <div className="sidebar-footer">
           <span className="online-dot" />
-          <span>Local API integration</span>
+          <span>Backend API integration</span>
         </div>
       </aside>
 
@@ -401,7 +405,9 @@ function App() {
             </h2>
           </div>
 
-          <span className="environment-badge">DEVELOPMENT</span>
+          <span className="environment-badge">
+            {import.meta.env.VITE_API_URL ? "PRODUCTION" : "DEVELOPMENT"}
+          </span>
         </header>
 
         {error && (
@@ -587,7 +593,7 @@ function App() {
               <div>
                 <h3>Previously generated reports</h3>
                 <p>
-                  Reports saved in your local SQLite database.
+                  Reports saved by the backend service.
                 </p>
               </div>
 
