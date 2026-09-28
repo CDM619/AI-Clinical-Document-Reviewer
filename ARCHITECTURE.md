@@ -1,200 +1,102 @@
-
 # System Architecture — AI Clinical Document Reviewer
 
 ## 1. Overview
 
-The AI Clinical Document Reviewer is a web application that extracts information from clinical documents, generates structured reports using a locally running language model, and stores reports for later retrieval.
+The application follows a client-server architecture. A React/Vite frontend communicates with a FastAPI backend. The backend validates input, extracts document text, calls the Groq hosted inference API, validates the generated report with Pydantic, and stores report content and metadata in SQLite.
 
-The application follows a client-server architecture consisting of a React frontend, a FastAPI backend, document processing services, an Ollama-hosted Mistral model, and an SQLite database.
+## 2. Deployed Components
 
-## 2. Architecture Diagram
+- **Frontend:** https://ai-clinical-document-reviewer-xi.vercel.app/
+- **Backend API:** https://ai-clinical-document-reviewer-pb0o.onrender.com
+- **API documentation:** https://ai-clinical-document-reviewer-pb0o.onrender.com/docs
+- **Inference provider:** Groq API, configured by `GROQ_MODEL`
+- **Storage:** SQLite file on the backend filesystem
+
+## 3. Architecture Diagram
 
 ```mermaid
 flowchart TD
-    U[User] --> FE[React Frontend<br/>React + Vite]
-    
-    FE -->|Clinical text or file upload| API[FastAPI Backend]
-    
-    API --> VAL[Input Validation]
-    VAL --> DP[Document Processor]
-    
-    DP -->|Digital PDF| PDF[PyMuPDF Text Extraction]
-    DP -->|Scanned PDF or Image| OCR[Tesseract OCR]
-    DP -->|Clinical Text| TXT[Text Input]
-    
-    PDF --> EX[Extracted Clinical Text]
+    U[User] --> FE[React + Vite Frontend on Vercel]
+    FE -->|HTTPS JSON / multipart upload| API[FastAPI Backend on Render]
+    API --> CORS[CORS and Request Validation]
+    CORS --> DP[Document Processor]
+    DP -->|Digital PDF| PDF[PyMuPDF]
+    DP -->|Scanned PDF page or image| OCR[Tesseract OCR via pytesseract]
+    DP -->|Text input| TXT[Clinical Text]
+    PDF --> EX[Extracted Text]
     OCR --> EX
     TXT --> EX
-    
-    EX --> AI[AI Analyzer]
-    AI -->|Local inference request| M[Ollama + Mistral]
-    M -->|Structured response| AI
-    
-    AI --> SC[Pydantic Schema Validation]
-    SC --> DB[(SQLite Database)]
-    
-    DB -->|Save and retrieve reports| API
+    EX --> AI[AI Analyzer and Prompt]
+    AI -->|HTTPS inference request| GROQ[Groq API / Configured Model]
+    GROQ -->|Model response| AI
+    AI --> P[Parse and Validate with Pydantic]
+    P --> DB[(SQLite Report Database)]
+    DB --> API
     API -->|JSON response| FE
-    FE --> UI[Structured Clinical Report]
+    FE --> VIEW[Report and History UI]
 ```
 
-## 3. Frontend Layer
+## 4. Frontend Layer
 
-**Technology:** React, Vite, JavaScript, CSS
+**Files:** `frontend/src/App.jsx`, `frontend/src/App.css`
 
-The frontend provides the user interface for interacting with the application.
+The frontend accepts clinical text or supported documents, calls the backend, displays loading and error states, renders structured reports, and requests report history and individual report details. It reads the API base URL from `VITE_API_URL`, with a local-development fallback.
 
-Responsibilities include:
+## 5. API and Orchestration Layer
 
-- Accepting clinical text from users.
-- Allowing supported document uploads.
-- Sending requests to the backend API.
-- Displaying generated clinical reports.
-- Showing loading, success, and error states.
-- Displaying previously generated reports through the history interface.
+**File:** `backend/app/main.py`
 
-The frontend communicates with the backend through HTTP requests and receives JSON responses.
+FastAPI initializes the application, configures CORS for local development and the deployed Vercel origin, initializes SQLite on startup, and registers the document router.
 
-## 4. Backend Layer
+**File:** `backend/app/routers/documents.py`
 
-**Technology:** Python, FastAPI
+The router handles `POST /analyze/text`, `POST /analyze/file`, `GET /reports`, and `GET /reports/{report_id}`. File uploads are restricted by extension, content type, and a 10 MB maximum size. Supported types include PDF, PNG, JPG, JPEG, and WEBP.
 
-The backend coordinates document processing, AI analysis, data validation, and report storage.
-
-### Main application
-
-`backend/app/main.py`
-
-Initializes the FastAPI application, initializes the database at startup, and registers the document router.
-
-### API router
-
-`backend/app/routers/documents.py`
-
-Handles the application's HTTP endpoints:
-
-- `POST /analyze/text`
-- `POST /analyze/file`
-- `GET /reports`
-- `GET /reports/{report_id}`
-
-The router validates requests, coordinates processing, and returns appropriate HTTP responses.
-
-## 5. Document Processing Layer
+## 6. Document Processing Layer
 
 **File:** `backend/app/services/document_processor.py`
 
-This component extracts text from supported documents.
+- Digital PDFs: PyMuPDF extracts selectable text page by page.
+- Scanned PDFs: pages without selectable text are rendered and sent through OCR.
+- Images: Pillow normalizes image orientation and converts images to RGB before pytesseract invokes Tesseract.
+- OCR configuration: `TESSERACT_CMD` can set the executable path; common Windows configuration and Linux PATH discovery are supported.
 
-### Digital PDFs
+OCR can introduce transcription errors, particularly with low-quality scans, tables, and unusual layouts.
 
-PyMuPDF extracts selectable text directly from PDF pages.
-
-### Scanned PDFs
-
-When a PDF page does not contain extractable text, the page is rendered as an image and processed through OCR.
-
-### Image documents
-
-Pillow prepares image input, while pytesseract invokes Tesseract OCR to extract text.
-
-The extracted text is passed to the AI analyzer.
-
-## 6. AI Analysis Layer
+## 7. AI Analysis Layer
 
 **File:** `backend/app/services/ai_analyzer.py`
 
-The AI analyzer prepares the extracted text, constructs the analysis prompt, and sends the request to the locally running Mistral model through Ollama.
+The analyzer reads `GROQ_API_KEY` and optional `GROQ_MODEL` from the environment. The deployed service is configured to use `openai/gpt-oss-120b`; the code default is `llama-3.3-70b-versatile` if no model is configured.
 
-The model is used to identify and organize information such as:
+Instructions tell the model to use only source-supported information, avoid inventing details, distinguish missing documentation from confirmed absence, treat multi-record datasets as datasets, and mark all reports for clinician review. Special handling exists for a known synthetic dataset format; it is not a clinically validated analytical method.
 
-- Patient information
-- Symptoms
-- Diagnoses or recorded labels
-- Medications
-- Vital signs
-- Allergies
-- Observations
-- Concerns
-- Missing information
-- Inconsistencies
-- Review notes
-
-The analyzer also contains specialized processing for synthetic clinical datasets.
-
-AI-generated information may be incomplete or inaccurate. The system therefore marks reports as requiring clinician review.
-
-## 7. Data Validation Layer
+## 8. Schema Validation Layer
 
 **File:** `backend/app/schemas/clinical_report.py`
 
-Pydantic models define the expected structure of the generated report.
+Pydantic defines the expected report structure, including patient information, summary, symptoms, diagnoses, medications, vitals, allergies, observations, concerns, missing information, inconsistencies, a clinician-review flag, and review notes. Schema validation enforces structure but does not establish clinical accuracy.
 
-The schema includes patient information, summary text, lists of clinical findings, and a clinician-review flag.
-
-Schema validation helps ensure that the generated output follows the expected data structure before it is returned or stored.
-
-Schema validation does not guarantee that the clinical information itself is factually correct.
-
-## 8. Database Layer
+## 9. Persistence Layer
 
 **File:** `backend/app/services/report_storage.py`
 
-**Technology:** SQLite
+SQLite stores report JSON, input type, filename where applicable, character count, and creation timestamp. The history endpoint returns recent report metadata; an individual report endpoint retrieves stored report details.
 
-SQLite stores generated reports in:
+The database is stored under the backend directory. On the deployed free Render filesystem, data may not survive service replacement or redeployment; durable production storage would require a persistent disk or managed database.
 
-`backend/clinical_reports.db`
+## 10. End-to-End Flow
 
-The storage component is responsible for:
+1. User enters clinical text or selects a supported file.
+2. Frontend sends the request to the backend over HTTPS.
+3. Backend validates input and, for files, extension, content type, and size.
+4. Processor extracts text directly or uses OCR.
+5. Analyzer submits extracted text to the configured Groq model.
+6. The response is parsed and validated with Pydantic.
+7. The report is saved to SQLite.
+8. Backend returns JSON and frontend displays the report.
+9. History requests retrieve report metadata or a specific report.
 
-- Initializing the database.
-- Saving generated reports.
-- Retrieving report history.
-- Retrieving an individual report by its identifier.
+## 11. Security and Known Limitations
 
-This allows previously generated reports to remain available after the backend restarts, provided the database file is retained.
-
-## 9. End-to-End Data Flow
-
-1. A user enters clinical text or selects a supported file.
-2. The React frontend sends the input to the FastAPI backend.
-3. The backend validates the request, file type, and file size.
-4. The document processor extracts text using PyMuPDF or OCR where appropriate.
-5. The AI analyzer sends the extracted text to Mistral through Ollama.
-6. The generated response is validated against the Pydantic report schema.
-7. The report is saved in SQLite.
-8. The backend returns the report to the frontend as JSON.
-9. The frontend renders the structured report.
-10. When requested, the backend retrieves stored reports for the history interface.
-
-## 10. Error Handling
-
-The backend handles common failures, including:
-
-- Unsupported file types.
-- Empty uploads or invalid input.
-- Files exceeding the upload limit.
-- PDF or image extraction failures.
-- AI inference failures.
-- Database storage or retrieval failures.
-
-Errors are returned through HTTP responses so that the frontend can display appropriate feedback.
-
-## 11. Security and Privacy Considerations
-
-- Use synthetic or appropriately de-identified clinical data during development.
-- Do not expose the backend API publicly without authentication and appropriate access controls.
-- Protect the SQLite database because stored reports may contain sensitive information.
-- Validate uploaded files and limit upload sizes.
-- Verify AI-generated output against the original clinical document.
-- Do not treat model output as a confirmed diagnosis or treatment recommendation.
-
-## 12. Known Limitations
-
-- OCR accuracy depends on document quality and layout.
-- Language model output may omit, misinterpret, or incorrectly organize clinical information.
-- Pydantic validation checks structure, not medical correctness.
-- The current Tesseract configuration uses a Windows-specific path.
-- Local inference requires Ollama to be installed and running.
-- Production deployment would require additional security, monitoring, and persistent storage configuration.
+The current prototype does not provide authentication or role-based access control. Use synthetic or de-identified documents. The hosted inference provider processes submitted text, so provider terms and privacy requirements should be reviewed before handling sensitive information. AI output can be incorrect, OCR can misread source text, and local database storage on the free hosting tier may be ephemeral. The application has not been validated for clinical deployment.

@@ -1,258 +1,204 @@
-
 # AI Clinical Document Reviewer
 
-An AI-assisted application that extracts information from clinical documents and produces structured clinical review reports. The application supports clinical text input, digital PDFs, scanned PDFs, and image-based documents.
+An educational AI-assisted web application that extracts information from clinical text and documents, then organizes it into a structured review report. It supports digital PDFs, scanned PDFs, and image-based documents.
+
+> **Safety notice:** This is an educational prototype, not a medical device. It does not provide validated diagnoses or treatment recommendations and must not replace review by a qualified clinician. Use synthetic or appropriately de-identified data.
+
+## Live Application
+
+- **Frontend:** https://ai-clinical-document-reviewer-xi.vercel.app/
+- **Backend API:** https://ai-clinical-document-reviewer-pb0o.onrender.com
+- **API documentation:** https://ai-clinical-document-reviewer-pb0o.onrender.com/docs
+- **Health check:** https://ai-clinical-document-reviewer-pb0o.onrender.com/health
+
+The frontend is hosted on Vercel and the FastAPI backend on Render. The backend uses the Groq API for hosted language-model inference.
 
 ## Features
 
-- **Clinical text analysis:** Submit clinical notes directly through the web interface.
-- **Document upload:** Upload PDF, PNG, JPG, JPEG, and WEBP files.
-- **Text extraction:** Extract selectable text from PDFs and use OCR for scanned pages and images.
-- **AI-powered analysis:** Use a locally running Mistral model through Ollama to generate structured reports.
-- **Structured reports:** Organize information into patient details, symptoms, diagnoses, medications, vital signs, allergies, observations, concerns, missing information, inconsistencies, and review notes.
-- **Report history:** Save and retrieve previously generated reports.
-- **Persistent storage:** Store report data in SQLite.
-- **Input validation:** Reject unsupported files, oversized uploads, empty files, and documents that cannot be processed.
-- **Clinician review warnings:** Remind users that AI-generated output must be verified by a qualified clinician.
+- Submit clinical text through the web interface.
+- Upload PDF, PNG, JPG, JPEG, and WEBP documents (maximum 10 MB).
+- Extract selectable PDF text using PyMuPDF.
+- Use Tesseract OCR for scanned PDF pages and images.
+- Generate structured reports using a hosted model through Groq.
+- Validate report structure with Pydantic.
+- Save and retrieve report history using SQLite.
+- Highlight missing or uncertain information and require clinician review.
+- Validate file extensions, content types, and upload size.
 
 ## Technology Stack
 
 | Component | Technology |
 |---|---|
 | Frontend | React, Vite, JavaScript, CSS |
-| Backend | Python, FastAPI |
-| Data validation | Pydantic |
-| Language model | Mistral through Ollama |
-| PDF processing | PyMuPDF |
-| Image OCR | Tesseract OCR, pytesseract |
+| Backend API | Python, FastAPI |
+| Validation | Pydantic |
+| Hosted inference | Groq API; model configured by `GROQ_MODEL` |
+| PDF extraction | PyMuPDF |
+| OCR | Tesseract OCR, pytesseract |
 | Image processing | Pillow |
-| Database | SQLite |
-| API communication | REST API, JSON |
+| Report storage | SQLite |
+| Deployment | Vercel (frontend), Render (backend Docker service) |
 
-## Project Structure
+The deployed service is configured with `GROQ_MODEL=openai/gpt-oss-120b`. If `GROQ_MODEL` is unset, the code defaults to `llama-3.3-70b-versatile`.
+
+## Repository Structure
 
 ```text
 ai-clinical-document-reviewer/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py
-│   │   ├── routers/
-│   │   │   └── documents.py
-│   │   ├── schemas/
-│   │   │   └── clinical_report.py
+│   │   ├── routers/documents.py
+│   │   ├── schemas/clinical_report.py
 │   │   └── services/
 │   │       ├── ai_analyzer.py
 │   │       ├── document_processor.py
 │   │       └── report_storage.py
-│   ├── main.py
-│   └── requirements.txt
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── .env                 # create locally; never commit secrets
 ├── frontend/
-│   ├── src/
-│   │   ├── App.jsx
-│   │   └── App.css
-│   ├── package.json
-│   └── ...
+│   ├── src/App.jsx
+│   ├── src/App.css
+│   └── package.json
+├── ARCHITECTURE.md
+├── AI_ML_DESIGN.md
+├── TECHNICAL_DECISIONS.md
+├── TESTING.md
 └── README.md
 ```
 
-## Prerequisites
+## Run Locally
 
-Install the following before running the application:
+### Prerequisites
 
 - Python 3.10 or later
 - Node.js and npm
-- Ollama
-- Tesseract OCR
+- Tesseract OCR installed
+- A Groq API key for model inference
 
-Download Ollama from https://ollama.com/.
+### 1. Configure the backend
 
-Install Tesseract OCR using a trusted distribution for your operating system.
-
-## Installation and Setup
-
-### 1. Open the project directory
-
-Open PowerShell in the project root directory, where the `backend` and `frontend` folders are located.
-
-### 2. Set up the backend
+From the repository root, open PowerShell:
 
 ```powershell
 cd backend
-
 python -m venv venv
-
 .\venv\Scripts\Activate.ps1
-
 pip install -r requirements.txt
 ```
 
-If PowerShell prevents virtual environment activation, run:
+Create `backend/.env` with your own key:
 
-```powershell
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
+```dotenv
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
-### 3. Set up Ollama
+Never commit `.env` or expose API keys in source code, screenshots, logs, or documentation. In production, configure secrets in the hosting provider's environment settings.
 
-Ensure Ollama is installed and running. Download the Mistral model:
+Install Tesseract OCR using a trusted distribution. On Windows, the document processor checks `C:\Program Files\Tesseract-OCR\tesseract.exe`. You can set `TESSERACT_CMD` to an alternate executable path. On Linux, Tesseract must be installed and available on the system path.
 
-```powershell
-ollama pull mistral
-```
-
-Verify that the model is available:
-
-```powershell
-ollama list
-```
-
-### 4. Configure Tesseract OCR
-
-The document processor is currently configured for this Windows installation path:
-
-```text
-C:\Program Files\Tesseract-OCR\tesseract.exe
-```
-
-If Tesseract is installed elsewhere, update the `tesseract_cmd` setting in `backend/app/services/document_processor.py`.
-
-### 5. Start the backend
-
-From the `backend` directory, activate the virtual environment if necessary, then run:
+Start the backend from `backend/`:
 
 ```powershell
 python -m uvicorn app.main:app --reload
 ```
 
-The API should be available at:
+Local API URLs:
+- http://127.0.0.1:8000
+- http://127.0.0.1:8000/docs
+- http://127.0.0.1:8000/health
 
-- API base URL: http://127.0.0.1:8000
-- Interactive API documentation: http://127.0.0.1:8000/docs
-- Health check: http://127.0.0.1:8000/health
+### 2. Configure the frontend
 
-Keep this terminal running.
-
-### 6. Set up the frontend
-
-Open a second PowerShell terminal. Navigate to the project root if necessary, then run:
+Open a second terminal at the repository root:
 
 ```powershell
 cd frontend
-
 npm install
+```
 
+Optionally create `frontend/.env.local`:
+
+```dotenv
+VITE_API_URL=http://127.0.0.1:8000
+```
+
+Then start Vite:
+
+```powershell
 npm run dev
 ```
 
-Open the local URL printed by Vite, normally:
+Open the local URL printed by Vite, normally http://localhost:5173/.
 
-http://localhost:5173/
+Vite environment variables are read at build time. In Vercel, set `VITE_API_URL` to the deployed backend URL and redeploy if needed.
 
 ## Application Workflow
 
-1. The user enters clinical text or uploads a supported document.
-2. The frontend sends the input to the FastAPI backend.
-3. The backend validates the request and extracts document text.
-4. Scanned pages and images are processed using OCR when necessary.
-5. The extracted text is sent to the locally running Mistral model through Ollama.
-6. The model generates a structured report that is validated against the Pydantic schema.
+1. The user submits clinical text or uploads a supported file.
+2. The React frontend sends the request to FastAPI.
+3. The backend validates the request and file type, content type, and size.
+4. The document processor extracts PDF text or uses OCR for scanned pages and images.
+5. The AI analyzer sends extracted text and instructions to the configured Groq model.
+6. The response is parsed and validated with Pydantic.
 7. The report is stored in SQLite.
-8. The frontend displays the report and allows users to view report history.
+8. The frontend displays the report and allows history retrieval.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md), [AI_ML_DESIGN.md](AI_ML_DESIGN.md), and [TECHNICAL_DECISIONS.md](TECHNICAL_DECISIONS.md).
 
 ## API Endpoints
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET | `/` | Check that the API is running |
-| GET | `/health` | Check backend health |
-| POST | `/analyze/text` | Analyze submitted clinical text |
+| GET | `/` | API status message |
+| GET | `/health` | Backend health check |
+| POST | `/analyze/text` | Analyze clinical text |
 | POST | `/analyze/file` | Extract and analyze an uploaded document |
 | GET | `/reports` | Retrieve report history |
 | GET | `/reports/{report_id}` | Retrieve an individual report |
 
-The interactive Swagger interface at `/docs` can be used to inspect endpoints and test requests.
+The Swagger interface is available at `/docs` on the API host.
 
-## Report Sections
+## Report Structure
 
-Each generated report can contain:
+Reports can contain a summary, patient information, symptoms, recorded diagnoses or labels, medications, vital signs, allergies, observations, concerns, missing information, inconsistencies, a clinician-review flag, and review notes.
 
-- Summary
-- Patient information
-- Symptoms
-- Diagnoses or recorded labels
-- Medications
-- Vital signs
-- Allergies
-- Observations
-- Concerns
-- Missing information
-- Inconsistencies
-- Clinician review requirement
-- Review notes
-
-Information that is not documented should not automatically be interpreted as a confirmed negative finding. Missing or uncertain information should be identified for review.
+The model instructions tell it to use source-supported information, distinguish missing information from confirmed absence, avoid inventing clinical facts, and require clinician review. These instructions reduce risk but do not guarantee correctness.
 
 ## Validation and Error Handling
 
-The backend validates uploaded documents and provides appropriate error responses for common problems.
-
 | HTTP Status | Meaning |
 |---|---|
-| 400 | Invalid or empty file |
-| 413 | File exceeds the configured upload limit |
-| 415 | Unsupported file type |
+| 400 | Empty or invalid input |
+| 413 | Upload exceeds the 10 MB limit |
+| 415 | Unsupported file type or mismatched content type |
 | 422 | Document extraction or input validation failure |
-| 500 | Internal server or storage failure |
+| 500 | Internal processing or storage failure |
 | 502 | AI analysis failure |
 
-The maximum upload size is configured as 10 MB.
+Exact responses depend on the validation path.
 
-## Data Storage
+## Storage and Deployment Limitations
 
-Generated reports are stored in the SQLite database at:
+Reports are stored in `backend/clinical_reports.db`. Local SQLite persistence depends on retaining the database file. **The deployed free Render service may use ephemeral local storage, so report history is not guaranteed to survive service replacement or redeployment.** Reliable long-term storage would require a persistent disk or managed database.
 
-`backend/clinical_reports.db`
-
-The database is initialized by the backend at startup. Report history is retrieved through the API.
-
-The database may contain sensitive clinical information if real documents are uploaded. Use synthetic data for demonstrations and testing. Do not expose the database or API publicly without appropriate security and privacy controls.
+A free Render instance may also spin down after inactivity, making the first request slower. The public demo does not implement authentication or role-based access control. Do not upload real patient data to the public demo.
 
 ## Testing
 
-The application has been manually tested with the following scenarios:
+Manual testing has been performed for clinical text analysis, synthetic PDF upload and analysis, and report history through the deployed frontend. See [TESTING.md](TESTING.md). These are manual functional checks, not an automated test suite or clinical accuracy evaluation.
 
-- Clinical text containing patient details, symptoms, and vital signs.
-- Clinical text containing missing or uncertain information.
-- Contradictory patient information.
-- Synthetic clinical dataset PDFs containing multiple patient records.
-- File uploads with unsupported extensions.
-- Documents that fail text extraction.
-- Report retrieval and persistence through SQLite.
+## Limitations and Future Work
 
-These are manual test scenarios. Automated test coverage should be added separately.
-
-## Limitations
-
-- AI-generated information can be incomplete or incorrect.
-- OCR may misread low-quality scans, handwriting, or poorly formatted documents.
-- Extracted information should be verified against the original document.
-- Synthetic dataset labels are not equivalent to validated clinical diagnoses.
-- The system is intended for document review assistance, not autonomous diagnosis or treatment.
-- The current OCR configuration uses a Windows-specific Tesseract path.
-- Local model inference requires Ollama and sufficient local computing resources.
+- Model output may omit, misinterpret, or incorrectly organize source information.
+- OCR accuracy depends on scan quality and layout.
+- Pydantic validation checks structure, not medical correctness.
+- Synthetic dataset labels are not validated clinical diagnoses.
+- Automated tests and quantitative extraction evaluation should be added.
+- Persistent storage, authentication, audit logging, and stronger privacy controls would be needed for a more robust deployment.
 
 ## Safety Disclaimer
 
-This project is an educational prototype for clinical document review assistance. It is not a medical device and must not be used as a substitute for professional medical judgment, diagnosis, or treatment.
-
-All generated reports require review by a qualified clinician. Use fictional or appropriately de-identified data during development and demonstrations.
-
-## Future Improvements
-
-- Automated backend and frontend tests.
-- Improved handling of complex tables and handwritten documents.
-- Configurable model and OCR settings.
-- Authentication and role-based access control.
-- Audit logging and stronger data protection.
-- Deployment with persistent database storage and a hosted inference service.
-- More robust evaluation of extraction accuracy and AI output quality.
+This is an educational prototype for document review assistance. It is not intended for autonomous diagnosis, treatment selection, emergency use, or replacement of professional medical judgment. All generated reports must be checked against the source document by a qualified clinician.

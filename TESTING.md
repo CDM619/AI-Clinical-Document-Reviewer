@@ -1,114 +1,72 @@
-
 # Testing Report — AI Clinical Document Reviewer
 
 ## 1. Objective
 
-The purpose of testing is to verify that the AI Clinical Document Reviewer accepts supported input, extracts clinical text, generates structured reports, stores report history, and handles invalid inputs appropriately.
-
-Testing is performed using synthetic clinical data to avoid unnecessary exposure of real patient information.
+Testing checks the main workflow: clinical text submission, document extraction, structured report generation, and report history. Testing uses synthetic data and is not a clinical validation study.
 
 ## 2. Testing Approach
 
-The application has been manually tested through the React frontend and its FastAPI backend.
+Testing has been performed manually through the deployed React frontend and FastAPI backend. No automated test suite or quantitative clinical accuracy benchmark is claimed.
 
-Testing covers:
-- Clinical text analysis.
-- PDF and image document processing.
-- OCR for scanned documents.
-- Structured report generation.
-- Input validation and error handling.
-- Report history and database persistence.
+## 3. Manual Functional Test Results
 
-## 3. Functional Test Cases
-
-| Test ID | Test Scenario | Expected Result | Reported Outcome |
+| Test ID | Scenario | Expected Result | Reported Outcome |
 |---|---|---|---|
-| TC-01 | Submit valid clinical text | Generate a structured clinical report | Passed |
-| TC-02 | Include patient information and vital signs | Extract and display documented details | Passed |
-| TC-03 | Submit text with missing information | Identify missing or uncertain information where appropriate | Passed |
-| TC-04 | Submit contradictory patient information | Flag inconsistencies when detected | Passed |
-| TC-05 | Upload a supported PDF | Extract text and generate a report | Passed |
-| TC-06 | Upload a synthetic clinical dataset PDF | Process the dataset and display relevant observations | Passed |
-| TC-07 | Upload an unsupported TXT file | Reject the upload with an unsupported-media response | Passed |
-| TC-08 | Upload a document that cannot be processed | Return an extraction error | Passed |
-| TC-09 | Retrieve report history | Display previously stored reports | Passed |
-| TC-10 | Restart the backend and retrieve saved reports | Preserve reports stored in SQLite | Passed |
-
-The outcomes above reflect the manual testing results reported during development. They are not the output of an automated test suite.
+| TC-01 | Submit synthetic clinical text | Generate a structured report | Passed in deployed application |
+| TC-02 | Inspect patient details and observations | Show source-supported details | Checked during text-analysis testing |
+| TC-03 | Upload a supported synthetic PDF | Extract text and generate a report | Passed in deployed application |
+| TC-04 | View report history after generating reports | Show saved report entries | Report history tested by user |
+| TC-05 | Open an individual report from history | Display saved report details | Report history tested by user |
+| TC-06 | Refresh the frontend | Application remains accessible and can request data again | Verify during final check |
+| TC-07 | Upload an unsupported file type | Reject the upload | Validation implemented; retest before claiming deployment verification |
+| TC-08 | Upload an empty or malformed document | Return an appropriate error | Error handling implemented; retest before claiming deployment verification |
+| TC-09 | Upload a file larger than 10 MB | Reject the upload | 10 MB limit implemented; retest before claiming deployment verification |
+| TC-10 | Test scanned PDF/image OCR | Extract readable text where possible | OCR path implemented; quality depends on the document |
 
 ## 4. Input Validation and Error Handling
 
-The backend validates incoming requests and uploaded files.
+The backend checks supported file extensions and content types, rejects empty uploads, enforces a 10 MB limit, and handles extraction, AI, and storage failures.
 
-| Condition | Expected HTTP Status |
+| Status | Meaning |
 |---|---|
-| Unsupported file type | 415 Unsupported Media Type |
-| Empty or invalid file | 400 Bad Request, where applicable |
-| File exceeding the configured limit | 413 Payload Too Large |
-| Document extraction failure | 422 Unprocessable Entity |
-| AI analysis failure | 502 Bad Gateway |
-| Internal processing or storage failure | 500 Internal Server Error |
+| 400 | Empty or invalid input |
+| 413 | File exceeds the configured limit |
+| 415 | Unsupported file type or content type mismatch |
+| 422 | Document extraction or input validation failure |
+| 500 | Internal processing or storage failure |
+| 502 | AI analysis failure |
 
-Exact responses depend on the validation path and error-handling implementation.
+Exact responses depend on the path and error condition.
 
-## 5. Clinical Information Validation
+## 5. Data and Clinical Safety Checks
 
-The application organizes extracted information into a structured report containing fields such as:
+The expected report structure includes a summary, patient information, symptoms, recorded diagnoses, medications, vital signs, allergies, observations, concerns, missing information, inconsistencies, clinician-review flag, and review notes.
 
-- Summary
-- Patient information
-- Symptoms
-- Diagnoses or recorded labels
-- Medications
-- Vital signs
-- Allergies
-- Observations
-- Concerns
-- Missing information
-- Inconsistencies
-- Review notes
+Generated information should be checked against the source document. Missing information should not be treated as a confirmed negative finding. Pydantic validation checks structure but not medical correctness.
 
-The system should not invent undocumented patient details or treat missing information as a confirmed negative finding.
+## 6. Report History and Persistence
 
-Generated reports must be compared against the original document. Structured output validation alone does not establish clinical accuracy.
+The application stores report content and metadata in SQLite. Local persistence depends on retaining the database file. The deployed free Render service may use ephemeral local storage, so long-term persistence across service replacement or redeployment is not guaranteed. Production durability would require persistent storage.
 
-## 6. Database Persistence
+## 7. Limitations
 
-SQLite is used to store generated reports.
-
-Manual verification includes:
-- Generating a report.
-- Retrieving the report through the application.
-- Checking the report history.
-- Restarting the backend.
-- Confirming that previously saved reports remain retrievable.
-
-Persistence depends on retaining the database file and its contents.
-
-## 7. Known Testing Limitations
-
-- Testing is manual rather than automated.
+- Testing is manual, not automated.
 - No quantitative clinical extraction accuracy benchmark has been established.
-- OCR performance may vary with image quality, page layout, and text clarity.
-- AI output may contain omissions or inaccuracies.
+- OCR performance varies by scan quality and layout.
+- Model output may omit or misinterpret information.
 - The application has not been validated for clinical deployment.
-- Passing functional tests does not establish medical correctness or patient safety.
+- Passing functional tests does not establish clinical correctness or patient safety.
 
-## 8. Future Testing Improvements
+## 8. Recommended Future Tests
 
-The following tests should be added as the project develops:
-
-- Automated backend API tests using pytest and FastAPI's test client.
+- Automated backend tests using pytest and FastAPI's test client.
 - Frontend component and interaction tests.
-- Tests for oversized files, malformed PDFs, and password-protected PDFs.
-- Tests for database failures and unavailable Ollama services.
-- Tests for empty AI responses and malformed model output.
-- Regression tests for patient identifiers and contradictory information.
-- Measured OCR accuracy using documents with known text.
-- Security testing for file uploads, data access, and deployment configuration.
+- Oversized, malformed, and password-protected PDF tests.
+- Tests for unavailable Groq service, malformed model output, and database failures.
+- Regression tests for missing fields and contradictory information.
+- OCR accuracy evaluation against documents with known text.
+- Security tests for upload handling, access control, and deployment configuration.
 
 ## 9. Conclusion
 
-Manual testing has been used to verify the main application workflow, including clinical text analysis, supported document uploads, synthetic dataset processing, error handling, and report persistence.
-
-The application is an educational prototype. Further automated testing, accuracy evaluation, privacy safeguards, and security validation are required before considering any real-world clinical use.
+Manual testing confirmed deployed clinical text analysis, synthetic PDF upload and analysis, and report history in the demonstrated workflow. Additional automated tests, accuracy evaluation, persistent storage, privacy safeguards, and security validation are needed before any real-world clinical use.
