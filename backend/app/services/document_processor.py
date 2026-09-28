@@ -1,15 +1,34 @@
 
 import io
+import os
+import shutil
 
 import pymupdf
 import pytesseract
 from PIL import Image, ImageOps
 
 
-# Windows Tesseract OCR installation path.
-pytesseract.pytesseract.tesseract_cmd = (
-    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-)
+# Use an explicitly configured Tesseract path when provided.
+# Otherwise, use the Windows installation path if it exists,
+# or let pytesseract locate Tesseract on Linux.
+configured_tesseract_path = os.getenv("TESSERACT_CMD")
+
+if configured_tesseract_path:
+    pytesseract.pytesseract.tesseract_cmd = configured_tesseract_path
+elif os.name == "nt":
+    windows_tesseract_path = (
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    )
+    if os.path.isfile(windows_tesseract_path):
+        pytesseract.pytesseract.tesseract_cmd = (
+            windows_tesseract_path
+        )
+else:
+    linux_tesseract_path = shutil.which("tesseract")
+    if linux_tesseract_path:
+        pytesseract.pytesseract.tesseract_cmd = (
+            linux_tesseract_path
+        )
 
 
 def extract_text_from_image(contents: bytes) -> str:

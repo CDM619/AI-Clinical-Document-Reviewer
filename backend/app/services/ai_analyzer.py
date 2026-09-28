@@ -1,13 +1,18 @@
-
+from dotenv import load_dotenv
+import os
 import re
-import statistics
 
-import ollama
+from groq import Groq
+
+load_dotenv()
 
 from app.schemas.clinical_report import ClinicalReport
 
 
-MODEL_NAME = "mistral"
+MODEL_NAME = os.getenv(
+    "GROQ_MODEL",
+    "llama-3.3-70b-versatile",
+)
 
 DATASET_COLUMNS = [
     "Age",
@@ -71,17 +76,26 @@ DATASETS
 """
 
 
-def normalize_synthetic_dataset(text: str) -> tuple[str, list[dict]]:
+def normalize_synthetic_dataset(
+    text: str,
+) -> tuple[str, list[dict]]:
     """
-    Reconstruct the known synthetic dataset format, where each patient
-    ID is followed by one value per line.
+    Reconstruct the known synthetic dataset format, where each
+    patient ID is followed by one value per line.
 
-    Returns the original text and an empty list if the format is
-    not recognized.
+    Returns the original text and an empty list if the format
+    is not recognized.
     """
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
 
-    patient_id_pattern = re.compile(r"^SYN-\d+$", re.IGNORECASE)
+    patient_id_pattern = re.compile(
+        r"^SYN-\d+$",
+        re.IGNORECASE,
+    )
 
     patient_positions = [
         index
@@ -112,15 +126,18 @@ def normalize_synthetic_dataset(text: str) -> tuple[str, list[dict]]:
         values = []
 
         for line in lines[start + 1:end]:
-            if line.lower().startswith(("field notes:", "units:")):
+            if line.lower().startswith(
+                ("field notes:", "units:")
+            ):
                 break
+
             values.append(line)
 
         if len(values) < len(DATASET_COLUMNS):
             print(
                 f"Warning: Could not reconstruct all fields for "
-                f"{patient_id}. Expected {len(DATASET_COLUMNS)} values, "
-                f"found {len(values)}."
+                f"{patient_id}. Expected {len(DATASET_COLUMNS)} "
+                f"values, found {len(values)}."
             )
             continue
 
@@ -137,9 +154,12 @@ def normalize_synthetic_dataset(text: str) -> tuple[str, list[dict]]:
     return text, records
 
 
-def calculate_dataset_statistics(records: list[dict]) -> dict:
+def calculate_dataset_statistics(
+    records: list[dict],
+) -> dict:
     """Calculate statistics directly from reconstructed records."""
     total_records = len(records)
+
     statistics_report = {
         "record_count": total_records,
         "numeric_ranges": {},
@@ -261,47 +281,76 @@ def analyze_clinical_text(text: str) -> ClinicalReport:
             + statistics_text
             + "\n\n"
             + "IMPORTANT: The statistics above were calculated "
-            "programmatically from reconstructed records. Use these "
-            "figures rather than estimating them."
+            "programmatically from reconstructed records. Use "
+            "these figures rather than estimating them."
         )
 
         print(
             "Synthetic dataset detected: "
-            f"{dataset_statistics['record_count']} records reconstructed; "
-            f"{dataset_statistics['missing_value_total']} missing field "
-            "values across those records."
+            f"{dataset_statistics['record_count']} records "
+            "reconstructed; "
+            f"{dataset_statistics['missing_value_total']} "
+            "missing field values across those records."
         )
     else:
         print("No recognized synthetic dataset format detected.")
 
-    response = ollama.chat(
-        model=MODEL_NAME,
-        messages=[
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT,
-            },
-            {
-                "role": "user",
-                "content": (
-                    "Analyze the following clinical document and return "
-                    "a structured report matching the provided schema.\n\n"
-                    "If this is a dataset, summarize the verified "
-                    "statistics in observations and the relevant actual "
-                    "measurement ranges in vitals. Do not put dataset "
-                    "statistics in patient_info. Do not interpret "
-                    "synthetic labels as confirmed diagnoses.\n\n"
-                    f"DOCUMENT:\n{analysis_text}"
-                ),
-            },
-        ],
-        format=ClinicalReport.model_json_schema(),
-        options={"temperature": 0},
-    )
+    api_key = os.getenv("GROQ_API_KEY")
 
-    report = ClinicalReport.model_validate_json(
-        response.message.content
-    )
+    if not api_key:
+        raise RuntimeError(
+            "GROQ_API_KEY is not configured. "
+            "Set the environment variable before analysis."
+        )
+
+    client = Groq(api_key=api_key)
+
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        SYSTEM_PROMPT
+                        + "\nReturn only a valid JSON object matching "
+                        "the ClinicalReport schema. Do not include "
+                        "Markdown fences or extra text."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Analyze the following clinical document and "
+                        "return a structured JSON report matching the "
+                        "provided schema.\n\n"
+                        "If this is a dataset, summarize the verified "
+                        "statistics in observations and the relevant "
+                        "actual measurement ranges in vitals. Do not "
+                        "put dataset statistics in patient_info. Do "
+                        "not interpret synthetic labels as confirmed "
+                        "diagnoses.\n\n"
+                        f"REQUIRED JSON SCHEMA:\n"
+                        f"{ClinicalReport.model_json_schema()}\n\n"
+                        f"DOCUMENT:\n{analysis_text}"
+                    ),
+                },
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+
+        content = response.choices[0].message.content
+
+        if not content:
+            raise ValueError("Groq returned an empty response.")
+
+        report = ClinicalReport.model_validate_json(content)
+
+    except Exception as exc:
+        raise RuntimeError(
+            f"AI analysis failed: {exc}"
+        ) from exc
 
     if records and dataset_statistics:
         report_data = report.model_dump()
@@ -325,8 +374,7 @@ def analyze_clinical_text(text: str) -> ClinicalReport:
             if name != "Age (years)"
         ]
 
-        # Guarantee that observations include the dataset size and
-        # recorded category counts from the calculated statistics.
+        # Preserve the dataset size and recorded category counts.
         report_data["observations"] = [
             (
                 "Dataset contains "
@@ -353,10 +401,6 @@ def analyze_clinical_text(text: str) -> ClinicalReport:
             if count > 0
         ]
 
-        if not report_data["missing_information"]:
-            report_data["missing_information"] = []
-
-        # Explicitly preserve the synthetic-label caveat.
         diabetes_note = (
             "The Diabetes field is a synthetic dataset label, "
             "not a confirmed clinical diagnosis."
